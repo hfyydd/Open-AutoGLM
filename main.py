@@ -29,6 +29,11 @@ from phone_agent.config.apps import list_supported_apps
 from phone_agent.model import ModelConfig
 
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
 def check_system_requirements() -> bool:
     """
     Check system requirements before running the agent.

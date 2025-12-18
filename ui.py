@@ -1,0 +1,295 @@
+import flet as ft
+import os
+import asyncio
+import traceback
+import requests
+import tempfile
+import sounddevice as sd
+import numpy as np
+from scipy.io.wavfile import write
+from dotenv import load_dotenv
+from phone_agent import PhoneAgent
+from phone_agent.agent import AgentConfig
+from phone_agent.model import ModelConfig
+
+# Load environment variables
+load_dotenv()
+
+def main(page: ft.Page):
+    # Window settings: Frameless and Transparent
+    page.title = "Open-AutoGLM Mini"
+    page.window_title_bar_hidden = True
+    page.window_title_bar_buttons_hidden = True
+    page.window_bgcolor = ft.Colors.TRANSPARENT
+    page.bgcolor = ft.Colors.TRANSPARENT
+    page.window_resizable = True
+    page.window_width = 400
+    page.window_height = 600
+    page.padding = 0
+
+    # Recording State
+    state = {"is_recording": False, "samplerate": 44100}
+    recording_data = []
+
+    # Initialize Agent
+    model_config = ModelConfig(
+        base_url=os.getenv("PHONE_AGENT_BASE_URL"),
+        model_name=os.getenv("PHONE_AGENT_MODEL"),
+        api_key=os.getenv("PHONE_AGENT_API_KEY"),
+    )
+    agent_config = AgentConfig(
+        device_id=os.getenv("PHONE_AGENT_DEVICE_ID"),
+        verbose=True,
+    )
+    agent = PhoneAgent(model_config=model_config, agent_config=agent_config)
+
+    # Log Area
+    log_area = ft.ListView(
+        expand=True,
+        spacing=10,
+        padding=20,
+        auto_scroll=True,
+    )
+
+    def add_log(message: str, color=ft.Colors.WHITE, weight=ft.FontWeight.NORMAL):
+        print(f"UI LOG: {message}")
+        log_area.controls.append(
+            ft.Text(message, color=color, weight=weight)
+        )
+        page.update()
+
+    def transcribe_audio(file_path):
+        if not file_path:
+            return ""
+        url = "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions"
+        api_key = os.getenv("PHONE_AGENT_API_KEY")
+        headers = {"Authorization": f"Bearer {api_key}"}
+        
+        try:
+            if file_path.startswith("file://"):
+                file_path = file_path[7:]
+                
+            with open(file_path, "rb") as f:
+                files = {"file": f}
+                data = {"model": "glm-asr-2512"}
+                response = requests.post(url, headers=headers, files=files, data=data)
+                response.raise_for_status()
+                result = response.json()
+                return result.get("text", "")
+        except Exception as e:
+            add_log(f"ASR Error: {str(e)}", color=ft.Colors.RED_400)
+            return ""
+
+    async def run_agent_task(task: str):
+        add_log(f"Starting task: {task}", color=ft.Colors.GREEN_400)
+        try:
+            agent.reset()
+            add_log("Step 1: Initializing...", color=ft.Colors.GREY_400)
+            step_result = await asyncio.to_thread(agent.step, task)
+            
+            while True:
+                add_log(f"💭 Thinking: {step_result.thinking}", color=ft.Colors.GREY_400)
+                add_log(f"🎯 Action: {step_result.action}", color=ft.Colors.YELLOW_400)
+                
+                if step_result.finished:
+                    break
+                    
+                add_log(f"Executing next step...", color=ft.Colors.GREY_400)
+                step_result = await asyncio.to_thread(agent.step)
+            
+            add_log(f"✅ Result: {step_result.message}", color=ft.Colors.GREEN_400, weight=ft.FontWeight.BOLD)
+            
+        except Exception as e:
+            error_msg = f"❌ Error: {str(e)}"
+            add_log(error_msg, color=ft.Colors.RED_400)
+            print(traceback.format_exc())
+
+    # Send action handler
+    def send_message(e):
+        task = input_field.value.strip()
+        if not task:
+            return
+        
+        input_field.value = ""
+        page.update()
+        
+        add_log(f"User: {task}", color=ft.Colors.BLUE_200, weight=ft.FontWeight.BOLD)
+        page.run_task(run_agent_task, task)
+
+    # Input Components
+    input_field = ft.TextField(
+        hint_text="Enter task...",
+        border_radius=20,
+        filled=True,
+        expand=True,
+        border_color=ft.Colors.TRANSPARENT,
+        bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.WHITE),
+        on_submit=send_message,
+        visible=True,
+    )
+
+    send_btn = ft.IconButton(
+        icon=ft.Icons.SEND_ROUNDED,
+        icon_color=ft.Colors.BLUE_400,
+        on_click=send_message,
+        visible=True,
+    )
+
+    voice_button = ft.IconButton(
+        icon=ft.Icons.MIC_ROUNDED,
+        icon_color=ft.Colors.WHITE,
+        bgcolor=ft.Colors.BLUE_400,
+        visible=False,
+        scale=1.0,
+        animate_scale=ft.Animation(600, ft.AnimationCurve.EASE_IN_OUT),
+    )
+
+    async def animate_recording():
+        while state["is_recording"]:
+            voice_button.scale = 1.3
+            page.update()
+            await asyncio.sleep(0.6)
+            voice_button.scale = 1.0
+            page.update()
+            await asyncio.sleep(0.6)
+
+    # sounddevice recording logic
+    def audio_callback(indata, frames, time, status):
+        if status:
+            print(f"SD Status: {status}")
+        recording_data.append(indata.copy())
+
+    async def on_voice_click(e):
+        if not state["is_recording"]:
+            # START RECORDING
+            try:
+                recording_data.clear()
+                state["is_recording"] = True
+                
+                # Check for default input device
+                device_info = sd.query_devices(None, 'input')
+                samplerate = int(device_info['default_samplerate'])
+                state["samplerate"] = samplerate
+                
+                state["stream"] = sd.InputStream(
+                    samplerate=samplerate, 
+                    channels=1, 
+                    callback=audio_callback
+                )
+                state["stream"].start()
+                
+                voice_button.icon = ft.Icons.STOP_CIRCLE_ROUNDED
+                voice_button.icon_color = ft.Colors.RED_400
+                add_log("🎤 Recording...", color=ft.Colors.BLUE_200)
+                asyncio.create_task(animate_recording())
+            except Exception as ex:
+                add_log(f"❌ Recording Error: {str(ex)}", color=ft.Colors.RED_400)
+                state["is_recording"] = False
+        else:
+            # STOP RECORDING
+            try:
+                voice_button.disabled = True
+                page.update()
+                
+                add_log("Stopping...", color=ft.Colors.GREY_400)
+                
+                if "stream" in state:
+                    state["stream"].stop()
+                    state["stream"].close()
+                
+                state["is_recording"] = False
+                voice_button.icon = ft.Icons.MIC_ROUNDED
+                voice_button.icon_color = ft.Colors.WHITE
+                voice_button.disabled = False
+                
+                if recording_data:
+                    # Save to WAV
+                    temp_path = os.path.join(tempfile.gettempdir(), "voice_input.wav")
+                    audio_array = np.concatenate(recording_data, axis=0)
+                    write(temp_path, state["samplerate"], audio_array)
+                    
+                    add_log("⏳ Transcribing...", color=ft.Colors.GREY_400)
+                    text = await asyncio.to_thread(transcribe_audio, temp_path)
+                    
+                    if text:
+                        input_field.value = text
+                        add_log(f"✨ Transcribed: {text}", color=ft.Colors.BLUE_200)
+                        send_message(None)
+                    else:
+                        add_log("❌ Failed to transcribe.", color=ft.Colors.RED_400)
+                else:
+                    add_log("❌ No audio data captured.", color=ft.Colors.RED_400)
+            except Exception as ex:
+                add_log(f"❌ Stop Error: {str(ex)}", color=ft.Colors.RED_400)
+                state["is_recording"] = False
+                voice_button.disabled = False
+        page.update()
+
+    voice_button.on_click = on_voice_click
+
+    def toggle_input_mode(e):
+        input_field.visible = not input_field.visible
+        send_btn.visible = input_field.visible
+        voice_button.visible = not input_field.visible
+        toggle_btn.icon = ft.Icons.KEYBOARD_ROUNDED if voice_button.visible else ft.Icons.MIC_ROUNDED
+        page.update()
+
+    toggle_btn = ft.IconButton(
+        icon=ft.Icons.MIC_ROUNDED,
+        on_click=toggle_input_mode,
+    )
+
+    # Main Layout
+    page.add(
+        ft.Container(
+            expand=True,
+            padding=10,
+            bgcolor=ft.Colors.with_opacity(0.95, "#1E1E1E"),
+            border_radius=20,
+            content=ft.Column(
+                [
+                    # Draggable Header
+                    ft.WindowDragArea(
+                        content=ft.Container(
+                            content=ft.Row(
+                                [
+                                    ft.Text("Open-AutoGLM", weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_400, size=16),
+                                ],
+                                alignment=ft.MainAxisAlignment.CENTER,
+                            ),
+                            padding=ft.padding.only(top=15, bottom=10),
+                        ),
+                    ),
+                    
+                    # Logs area
+                    ft.Container(
+                        content=log_area,
+                        expand=True,
+                    ),
+                    
+                    # Bottom Bar
+                    ft.Container(
+                        padding=ft.padding.only(left=20, right=20, bottom=30),
+                        content=ft.Row(
+                            [
+                                toggle_btn,
+                                ft.Stack(
+                                    [
+                                        ft.Row([input_field], alignment=ft.MainAxisAlignment.CENTER),
+                                        ft.Row([voice_button], alignment=ft.MainAxisAlignment.CENTER),
+                                    ],
+                                    expand=True,
+                                ),
+                                send_btn,
+                            ],
+                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                    ),
+                ],
+            ),
+        )
+    )
+
+if __name__ == "__main__":
+    ft.app(target=main)

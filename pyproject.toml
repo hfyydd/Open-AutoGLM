@@ -1,0 +1,11 @@
+[project]
+name = "open-autoglm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "flet[all]==0.28.3",
+    "scipy>=1.16.3",
+    "sounddevice>=0.5.3",
+]
