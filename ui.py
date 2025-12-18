@@ -16,21 +16,22 @@ from phone_agent.model import ModelConfig
 load_dotenv()
 
 def main(page: ft.Page):
-    # Window settings: True Extreme Minimalism
-    page.title = ""  # Empty title
+    # Window settings: True Extreme Minimalism for macOS
     page.window_title_bar_hidden = True
     page.window_title_bar_buttons_hidden = True
+    page.window_frameless = True  # More aggressive frameless
     
-    # Transparency
+    # Transparency and No Title
     page.window_bgcolor = ft.Colors.TRANSPARENT
     page.bgcolor = ft.Colors.TRANSPARENT
     
     # Sizing and behavior
     page.window_width = 400
     page.window_height = 600
-    page.window_resizable = True
+    page.window_resizable = False  # Fixed size for better frameless feel
     page.padding = 0
-    
+    page.spacing = 0
+
     # Recording State
     state = {"is_recording": False, "samplerate": 44100}
     recording_data = []
@@ -199,7 +200,7 @@ def main(page: ft.Page):
         on_click=toggle_input_mode,
     )
 
-    # Main Layout: The root is directly a WindowDragArea wrapping a Container
+    # Main Layout
     page.add(
         ft.WindowDragArea(
             content=ft.Container(
@@ -210,13 +211,13 @@ def main(page: ft.Page):
                 padding=0,
                 content=ft.Column(
                     [
-                        # Logs Area (Top) - Expands to fill rest
+                        # Logs Area
                         ft.Container(
                             content=log_area,
                             expand=True,
                         ),
                         
-                        # Bottom Bar (Stays at bottom)
+                        # Bottom Bar
                         ft.Container(
                             padding=ft.padding.only(left=20, right=20, bottom=30, top=10),
                             content=ft.Row(
@@ -242,7 +243,8 @@ def main(page: ft.Page):
         )
     )
     
-    # Final force update to ensure frameless properties take effect
+    # Extra force update for frameless
+    page.window_center()
     page.update()
 
 if __name__ == "__main__":
