@@ -16,17 +16,21 @@ from phone_agent.model import ModelConfig
 load_dotenv()
 
 def main(page: ft.Page):
-    # Window settings: Extreme Minimalism
-    page.title = "Open-AutoGLM Mini"
+    # Window settings: True Extreme Minimalism
+    page.title = ""  # Empty title
     page.window_title_bar_hidden = True
     page.window_title_bar_buttons_hidden = True
+    
+    # Transparency
     page.window_bgcolor = ft.Colors.TRANSPARENT
     page.bgcolor = ft.Colors.TRANSPARENT
-    page.window_resizable = True
+    
+    # Sizing and behavior
     page.window_width = 400
     page.window_height = 600
+    page.window_resizable = True
     page.padding = 0
-
+    
     # Recording State
     state = {"is_recording": False, "samplerate": 44100}
     recording_data = []
@@ -47,7 +51,7 @@ def main(page: ft.Page):
     log_area = ft.ListView(
         expand=True,
         spacing=10,
-        padding=ft.padding.only(left=20, right=20, top=20),
+        padding=ft.padding.all(20),
         auto_scroll=True,
     )
 
@@ -59,23 +63,16 @@ def main(page: ft.Page):
         page.update()
 
     def transcribe_audio(file_path):
-        if not file_path:
-            return ""
+        if not file_path: return ""
         url = "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions"
         api_key = os.getenv("PHONE_AGENT_API_KEY")
         headers = {"Authorization": f"Bearer {api_key}"}
-        
         try:
-            if file_path.startswith("file://"):
-                file_path = file_path[7:]
-                
+            if file_path.startswith("file://"): file_path = file_path[7:]
             with open(file_path, "rb") as f:
-                files = {"file": f}
-                data = {"model": "glm-asr-2512"}
-                response = requests.post(url, headers=headers, files=files, data=data)
+                response = requests.post(url, headers=headers, files={"file": f}, data={"model": "glm-asr-2512"})
                 response.raise_for_status()
-                result = response.json()
-                return result.get("text", "")
+                return response.json().get("text", "")
         except Exception as e:
             add_log(f"ASR Error: {str(e)}", color=ft.Colors.RED_400)
             return ""
@@ -86,36 +83,23 @@ def main(page: ft.Page):
             agent.reset()
             add_log("Thinking...", color=ft.Colors.GREY_400)
             step_result = await asyncio.to_thread(agent.step, task)
-            
             while True:
                 add_log(f"💭 {step_result.thinking}", color=ft.Colors.GREY_400)
                 add_log(f"🎯 {step_result.action}", color=ft.Colors.YELLOW_400)
-                
-                if step_result.finished:
-                    break
-                    
+                if step_result.finished: break
                 step_result = await asyncio.to_thread(agent.step)
-            
             add_log(f"✅ {step_result.message}", color=ft.Colors.GREEN_400, weight=ft.FontWeight.BOLD)
-            
         except Exception as e:
-            error_msg = f"❌ Error: {str(e)}"
-            add_log(error_msg, color=ft.Colors.RED_400)
-            print(traceback.format_exc())
+            add_log(f"❌ Error: {str(e)}", color=ft.Colors.RED_400)
 
-    # Send action handler
     def send_message(e):
         task = input_field.value.strip()
-        if not task:
-            return
-        
+        if not task: return
         input_field.value = ""
         page.update()
-        
         add_log(f"You: {task}", color=ft.Colors.BLUE_200, weight=ft.FontWeight.BOLD)
         page.run_task(run_agent_task, task)
 
-    # Input Components
     input_field = ft.TextField(
         hint_text="Enter task...",
         border_radius=20,
@@ -215,25 +199,26 @@ def main(page: ft.Page):
         on_click=toggle_input_mode,
     )
 
-    # Main Layout: Entire window is a WindowDragArea
+    # Main Layout: The root is directly a WindowDragArea wrapping a Container
     page.add(
         ft.WindowDragArea(
             content=ft.Container(
-                expand=True,
-                padding=10,
+                width=400,
+                height=600,
                 bgcolor=ft.Colors.with_opacity(0.95, "#1E1E1E"),
-                border_radius=20,
+                border_radius=24,
+                padding=0,
                 content=ft.Column(
                     [
-                        # Logs area
+                        # Logs Area (Top) - Expands to fill rest
                         ft.Container(
                             content=log_area,
                             expand=True,
                         ),
                         
-                        # Bottom Bar
+                        # Bottom Bar (Stays at bottom)
                         ft.Container(
-                            padding=ft.padding.only(left=20, right=20, bottom=30),
+                            padding=ft.padding.only(left=20, right=20, bottom=30, top=10),
                             content=ft.Row(
                                 [
                                     toggle_btn,
@@ -251,10 +236,14 @@ def main(page: ft.Page):
                             ),
                         ),
                     ],
+                    spacing=0,
                 ),
             )
         )
     )
+    
+    # Final force update to ensure frameless properties take effect
+    page.update()
 
 if __name__ == "__main__":
     ft.app(target=main)
