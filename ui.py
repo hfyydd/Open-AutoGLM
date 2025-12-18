@@ -16,7 +16,7 @@ from phone_agent.model import ModelConfig
 load_dotenv()
 
 def main(page: ft.Page):
-    # Window settings: Frameless and Transparent
+    # Window settings: Extreme Minimalism
     page.title = "Open-AutoGLM Mini"
     page.window_title_bar_hidden = True
     page.window_title_bar_buttons_hidden = True
@@ -47,7 +47,7 @@ def main(page: ft.Page):
     log_area = ft.ListView(
         expand=True,
         spacing=10,
-        padding=20,
+        padding=ft.padding.only(left=20, right=20, top=20),
         auto_scroll=True,
     )
 
@@ -81,23 +81,22 @@ def main(page: ft.Page):
             return ""
 
     async def run_agent_task(task: str):
-        add_log(f"Starting task: {task}", color=ft.Colors.GREEN_400)
+        add_log(f"Starting: {task}", color=ft.Colors.GREEN_400)
         try:
             agent.reset()
-            add_log("Step 1: Initializing...", color=ft.Colors.GREY_400)
+            add_log("Thinking...", color=ft.Colors.GREY_400)
             step_result = await asyncio.to_thread(agent.step, task)
             
             while True:
-                add_log(f"💭 Thinking: {step_result.thinking}", color=ft.Colors.GREY_400)
-                add_log(f"🎯 Action: {step_result.action}", color=ft.Colors.YELLOW_400)
+                add_log(f"💭 {step_result.thinking}", color=ft.Colors.GREY_400)
+                add_log(f"🎯 {step_result.action}", color=ft.Colors.YELLOW_400)
                 
                 if step_result.finished:
                     break
                     
-                add_log(f"Executing next step...", color=ft.Colors.GREY_400)
                 step_result = await asyncio.to_thread(agent.step)
             
-            add_log(f"✅ Result: {step_result.message}", color=ft.Colors.GREEN_400, weight=ft.FontWeight.BOLD)
+            add_log(f"✅ {step_result.message}", color=ft.Colors.GREEN_400, weight=ft.FontWeight.BOLD)
             
         except Exception as e:
             error_msg = f"❌ Error: {str(e)}"
@@ -113,7 +112,7 @@ def main(page: ft.Page):
         input_field.value = ""
         page.update()
         
-        add_log(f"User: {task}", color=ft.Colors.BLUE_200, weight=ft.FontWeight.BOLD)
+        add_log(f"You: {task}", color=ft.Colors.BLUE_200, weight=ft.FontWeight.BOLD)
         page.run_task(run_agent_task, task)
 
     # Input Components
@@ -153,74 +152,51 @@ def main(page: ft.Page):
             page.update()
             await asyncio.sleep(0.6)
 
-    # sounddevice recording logic
     def audio_callback(indata, frames, time, status):
-        if status:
-            print(f"SD Status: {status}")
         recording_data.append(indata.copy())
 
     async def on_voice_click(e):
         if not state["is_recording"]:
-            # START RECORDING
             try:
                 recording_data.clear()
                 state["is_recording"] = True
-                
-                # Check for default input device
                 device_info = sd.query_devices(None, 'input')
                 samplerate = int(device_info['default_samplerate'])
                 state["samplerate"] = samplerate
-                
-                state["stream"] = sd.InputStream(
-                    samplerate=samplerate, 
-                    channels=1, 
-                    callback=audio_callback
-                )
+                state["stream"] = sd.InputStream(samplerate=samplerate, channels=1, callback=audio_callback)
                 state["stream"].start()
-                
                 voice_button.icon = ft.Icons.STOP_CIRCLE_ROUNDED
                 voice_button.icon_color = ft.Colors.RED_400
-                add_log("🎤 Recording...", color=ft.Colors.BLUE_200)
+                add_log("🎤 Listening...", color=ft.Colors.BLUE_200)
                 asyncio.create_task(animate_recording())
             except Exception as ex:
-                add_log(f"❌ Recording Error: {str(ex)}", color=ft.Colors.RED_400)
+                add_log(f"❌ Error: {str(ex)}", color=ft.Colors.RED_400)
                 state["is_recording"] = False
         else:
-            # STOP RECORDING
             try:
                 voice_button.disabled = True
                 page.update()
-                
-                add_log("Stopping...", color=ft.Colors.GREY_400)
-                
                 if "stream" in state:
                     state["stream"].stop()
                     state["stream"].close()
-                
                 state["is_recording"] = False
                 voice_button.icon = ft.Icons.MIC_ROUNDED
                 voice_button.icon_color = ft.Colors.WHITE
                 voice_button.disabled = False
-                
                 if recording_data:
-                    # Save to WAV
                     temp_path = os.path.join(tempfile.gettempdir(), "voice_input.wav")
                     audio_array = np.concatenate(recording_data, axis=0)
                     write(temp_path, state["samplerate"], audio_array)
-                    
                     add_log("⏳ Transcribing...", color=ft.Colors.GREY_400)
                     text = await asyncio.to_thread(transcribe_audio, temp_path)
-                    
                     if text:
                         input_field.value = text
-                        add_log(f"✨ Transcribed: {text}", color=ft.Colors.BLUE_200)
+                        add_log(f"✨ {text}", color=ft.Colors.BLUE_200)
                         send_message(None)
                     else:
-                        add_log("❌ Failed to transcribe.", color=ft.Colors.RED_400)
-                else:
-                    add_log("❌ No audio data captured.", color=ft.Colors.RED_400)
+                        add_log("❌ Failed.", color=ft.Colors.RED_400)
             except Exception as ex:
-                add_log(f"❌ Stop Error: {str(ex)}", color=ft.Colors.RED_400)
+                add_log(f"❌ Error: {str(ex)}", color=ft.Colors.RED_400)
                 state["is_recording"] = False
                 voice_button.disabled = False
         page.update()
@@ -239,55 +215,44 @@ def main(page: ft.Page):
         on_click=toggle_input_mode,
     )
 
-    # Main Layout
+    # Main Layout: Entire window is a WindowDragArea
     page.add(
-        ft.Container(
-            expand=True,
-            padding=10,
-            bgcolor=ft.Colors.with_opacity(0.95, "#1E1E1E"),
-            border_radius=20,
-            content=ft.Column(
-                [
-                    # Draggable Header
-                    ft.WindowDragArea(
-                        content=ft.Container(
+        ft.WindowDragArea(
+            content=ft.Container(
+                expand=True,
+                padding=10,
+                bgcolor=ft.Colors.with_opacity(0.95, "#1E1E1E"),
+                border_radius=20,
+                content=ft.Column(
+                    [
+                        # Logs area
+                        ft.Container(
+                            content=log_area,
+                            expand=True,
+                        ),
+                        
+                        # Bottom Bar
+                        ft.Container(
+                            padding=ft.padding.only(left=20, right=20, bottom=30),
                             content=ft.Row(
                                 [
-                                    ft.Text("Open-AutoGLM", weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_400, size=16),
+                                    toggle_btn,
+                                    ft.Stack(
+                                        [
+                                            ft.Row([input_field], alignment=ft.MainAxisAlignment.CENTER),
+                                            ft.Row([voice_button], alignment=ft.MainAxisAlignment.CENTER),
+                                        ],
+                                        expand=True,
+                                    ),
+                                    send_btn,
                                 ],
-                                alignment=ft.MainAxisAlignment.CENTER,
+                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             ),
-                            padding=ft.padding.only(top=15, bottom=10),
                         ),
-                    ),
-                    
-                    # Logs area
-                    ft.Container(
-                        content=log_area,
-                        expand=True,
-                    ),
-                    
-                    # Bottom Bar
-                    ft.Container(
-                        padding=ft.padding.only(left=20, right=20, bottom=30),
-                        content=ft.Row(
-                            [
-                                toggle_btn,
-                                ft.Stack(
-                                    [
-                                        ft.Row([input_field], alignment=ft.MainAxisAlignment.CENTER),
-                                        ft.Row([voice_button], alignment=ft.MainAxisAlignment.CENTER),
-                                    ],
-                                    expand=True,
-                                ),
-                                send_btn,
-                            ],
-                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                        ),
-                    ),
-                ],
-            ),
+                    ],
+                ),
+            )
         )
     )
 
