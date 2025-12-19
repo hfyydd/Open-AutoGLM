@@ -224,7 +224,7 @@ def main(page: ft.Page):
                         
                         # Bottom Bar
                         ft.Container(
-                            padding=ft.padding.only(left=20, right=20, bottom=30, top=10),
+                            padding=ft.padding.only(left=20, right=20, bottom=40, top=10),
                             content=ft.Row(
                                 [
                                     toggle_btn,
