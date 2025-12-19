@@ -17,18 +17,23 @@ load_dotenv()
 
 def main(page: ft.Page):
     # Window settings: True Extreme Minimalism for macOS
-    page.window_title_bar_hidden = True
-    page.window_title_bar_buttons_hidden = True
-    page.window_frameless = True  # More aggressive frameless
+    page.title = ""  # Force empty title
     
-    # Transparency and No Title
-    page.window_bgcolor = ft.Colors.TRANSPARENT
+    # Hide title bars and buttons
+    page.window.title_bar_hidden = True
+    page.window.title_bar_buttons_hidden = True
+    page.window.frameless = True
+    
+    # Transparency
+    page.window.bgcolor = ft.Colors.TRANSPARENT
     page.bgcolor = ft.Colors.TRANSPARENT
     
-    # Sizing and behavior
-    page.window_width = 400
-    page.window_height = 600
-    page.window_resizable = False  # Fixed size for better frameless feel
+    # Sizing
+    page.window.width = 400
+    page.window.height = 600
+    page.window.resizable = False
+    page.window.center()
+    
     page.padding = 0
     page.spacing = 0
 
@@ -243,8 +248,7 @@ def main(page: ft.Page):
         )
     )
     
-    # Extra force update for frameless
-    page.window_center()
+    # Final update
     page.update()
 
 if __name__ == "__main__":
